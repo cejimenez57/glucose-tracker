@@ -41,14 +41,38 @@ function loadMonthData(user, month) {
     }
 }
 
-
-function saveMonthData(monthState) {
-    const key = getStorageKey(monthState.user, monthState.month);
-    localStorage.setItem(key, JSON.stringify(monthState));
+async function saveMonthData(monthState) {
     if (!monthState.user || !monthState.month) return;
+
+    for (const entry of monthState.entries) {
+        // skip blank rows
+        if (!entry.date && !entry.time && !entry.beforeMeal && !entry.afterMeal && !entry.notes) {
+            continue;
+        }
+
+        // only save NEW rows
+        if (!String(entry.id).startsWith("entry-")) {
+            continue;
+        }
+
+        await fetch(`https://glucose-tracker-api-vpm0.onrender.com/api/users/${monthState.user}/months/${monthState.month}/entries`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                date: entry.date,
+                time: entry.time,
+                beforeMeal: entry.beforeMeal,
+                afterMeal: entry.afterMeal,
+                notes: entry.notes
+            })
+        });
+    }
+
+    // reload from database so new rows get real database IDs
+    await loadEntriesFromDB();
 }
-
-
 // ========= Block 3: Render Table =========
 
 function renderTable() {
@@ -117,18 +141,36 @@ function attachInputListeners() {
                 value = value === "" ? null : Number(value);
             }
 
-            const entry = currentMonthState.entries.find(e => e.id === entryId);
+            const entry = currentMonthState.entries.find(e => String(e.id) === String(entryId));
+
             if (entry) {
                 entry[field] = value;
             }
+
             updateAverage();
             console.log("Updated state:", currentMonthState);
+
+            // update only rows that already exist in the database
+            if (entry && !String(entry.id).startsWith("entry-")) {
+                fetch(`https://glucose-tracker-api-vpm0.onrender.com/api/entries/${entry.id}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        date: entry.date,
+                        time: entry.time,
+                        beforeMeal: entry.beforeMeal,
+                        afterMeal: entry.afterMeal,
+                        notes: entry.notes
+                    })
+                });
+            }
         });
     });
 }
 
 // ========= Block 5: Delete Row =========
-
 function attachDeleteListeners() {
     const buttons = document.querySelectorAll(".delete-row");
 
@@ -137,10 +179,14 @@ function attachDeleteListeners() {
             const entryId = event.target.dataset.id;
 
             currentMonthState.entries =
-                currentMonthState.entries.filter(e => e.id !== entryId);
+                currentMonthState.entries.filter(e => String(e.id) !== String(entryId));
 
             console.log("After delete:", currentMonthState.entries);
             renderTable();
+
+            fetch(`https://glucose-tracker-api-vpm0.onrender.com/api/entries/${entryId}`, {
+                method: "DELETE"
+            });
         });
     });
 }
@@ -181,7 +227,7 @@ function updateAverage() {
     }
 
     console.log("Updated average:", average);
-    saveMonthData(currentMonthState);
+    //saveMonthData(currentMonthState);
 }
 
 function handleAddRow() {
@@ -235,6 +281,22 @@ if (savedData) {
         .addEventListener("click", () => {
             window.location.href = "months.html";
         });
+    loadEntriesFromDB();
+});
+
+document.getElementById("save-button").addEventListener("click", () => {
+    saveMonthData(currentMonthState);
+    console.log("Saved to database");
+});
+
+async function loadEntriesFromDB() {
+    const res = await fetch(`https://glucose-tracker-api-vpm0.onrender.com/api/users/${currentMonthState.user}/months/${currentMonthState.month}/entries`);
+    const data = await res.json();
+
+    currentMonthState.entries = data.entries;
+    currentMonthState.average = data.average;
+
+    console.log("Loaded from DB:", data);
 
     renderTable();
-});
+}
