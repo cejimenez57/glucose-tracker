@@ -4,19 +4,14 @@ function getStorageKey(user, month) {
     return `glucose:${user}:${month}`;
 }
 
-function loadMonthAverage(user, month) {
-    const key = getStorageKey(user, month);
-    const stored = localStorage.getItem(key);
-
-    if (!stored) {
-        return null;
-    }
-
+async function loadMonthAverage(user, month) {
     try {
-        const data = JSON.parse(stored);
+        const res = await fetch(`https://glucose-tracker-api-vpm0.onrender.com/api/users/${user}/months/${month}/entries`);
+        const data = await res.json();
+
         return data.average ?? null;
     } catch (error) {
-        console.error(`Error parsing data for ${month}`, error);
+        console.error(`Error loading ${month}`, error);
         return null;
     }
 }
@@ -39,23 +34,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ----- Populate Monthly Averages -----
-    document.querySelectorAll(".month-card").forEach(card => {
-        const month = card.dataset.month;
-        const averageSpan = card.querySelector(".month-average");
+document.querySelectorAll(".month-card").forEach(async card => {
+    const month = card.dataset.month;
+    const averageSpan = card.querySelector(".month-average");
 
-        if (!averageSpan) {
-            console.warn(`Missing .month-average span for ${month}`);
-            return;
-        }
+    if (!averageSpan) {
+        console.warn(`Missing .month-average span for ${month}`);
+        return;
+    }
 
-        const avg = loadMonthAverage(user, month);
+    const avg = await loadMonthAverage(user, month);
 
-        if (avg === null) {
-            averageSpan.textContent = "Avg: N/A";
-        } else {
-            averageSpan.textContent = `Avg: ${avg}`;
-        }
-    });
+    if (avg === null) {
+        averageSpan.textContent = "Avg: N/A";
+    } else {
+        averageSpan.textContent = `Avg: ${avg}`;
+    }
+});
 
     // ----- Month Navigation -----
     document.querySelectorAll(".month-card").forEach(card => {
